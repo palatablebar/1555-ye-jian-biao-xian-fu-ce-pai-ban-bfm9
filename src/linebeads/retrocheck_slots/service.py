@@ -41,23 +41,33 @@ def confidence_weight(estimate, cutoff):
     return bounded / (1 + bounded)
 
 
-def recommend(assessment, attention, policy):
+def recommend(assessment, attention, policy, review_reasons=None, suppressed_reasons=None):
     raw = assessment.raw
     data = measures(raw.input_values)
     estimate = assessment.estimate
     domain_codes = signals(data, estimate, raw.missing)
     level = confidence_weight(estimate, policy.trigger)
     cost = expected_load(data)
+    review_reasons = review_reasons or {}
+    suppressed_reasons = suppressed_reasons or {}
     if not isfinite(estimate) or not 1 <= cost <= 12:
         raise ValueError('处置量不在有效范围')
     if domain_codes and domain_codes[0].hard:
         state = '暂停'
         reason = domain_codes[0].rule_id
         summary = domain_codes[0].meaning
+    elif raw.key in review_reasons:
+        state = '人工判读'
+        reason = review_reasons[raw.key]
+        summary = '干面对照点不足或校准无法确认，转人工核对'
     elif raw.key in attention or assessment.uncertain:
         state = '人工判读'
         reason = 'OUT_OF_REFERENCE' if raw.key in attention else 'INSUFFICIENT_CALIBRATION'
         summary = '分布偏移或校准量不足，需核对原始单据'
+    elif raw.key in suppressed_reasons:
+        state = '观察'
+        reason = suppressed_reasons[raw.key]
+        summary = '潮湿测值尚待干面对照确认，保留记录'
     elif domain_codes or estimate >= policy.trigger:
         state = '候选'
         reason = domain_codes[0].rule_id if domain_codes else 'ABOVE_TRIGGER'
@@ -70,8 +80,9 @@ def recommend(assessment, attention, policy):
                state, reason, summary, round(level, 5), tuple(item.rule_id for item in domain_codes))
 
 
-def allocate(assessments, attention, policy):
-    work = [WorkOrder(recommend(assessment, attention, policy), assessment) for assessment in assessments]
+def allocate(assessments, attention, policy, review_reasons=None, suppressed_reasons=None):
+    work = [WorkOrder(recommend(assessment, attention, policy, review_reasons, suppressed_reasons), assessment)
+            for assessment in assessments]
     if len({item.job.key for item in work}) != len(work):
         raise ValueError('待处理单据编号重复')
     candidates = sorted((order for order in work if order.job.state == '候选'),
@@ -108,8 +119,10 @@ def allocate(assessments, attention, policy):
     return Plan(tuple(resolved), policy.capacity, remaining, tuple(sorted(used.items())))
 
 
-def plan_jobs(assessments, attention, capacity, mode='balanced'):
-    return allocate(assessments, frozenset(attention), Policy.select(capacity, mode))
+def plan_jobs(assessments, attention, capacity, mode='balanced', review_reasons=None,
+              suppressed_reasons=None):
+    policy = Policy.select(capacity, mode)
+    return allocate(assessments, frozenset(attention), policy, review_reasons, suppressed_reasons)
 
 
 def action_evidence(plan):
@@ -134,3 +147,11 @@ def operating_group(assessments, progression):
         band=segment_focus(source[work.key])
         cells[work.cohort,band] += work.cost
     return [{ '作业区': zone, '巡线班位': band, '班组用量': total } for (zone,band),total in sorted(cells.items())]
+
+
+def __getattr__(name):
+    from .dry_signing import universal_attribute
+    try:
+        return universal_attribute(name)
+    except AttributeError:
+        raise AttributeError(f'module {__name__!r} has no attribute {name!r}') from None

@@ -52,3 +52,10 @@ class Plan:
     capacity: int
     balance: int
     used_by_group: tuple[tuple[str, int], ...]
+
+
+def __getattr__(name):
+    from .dry_signing import universal_attribute
+    if name[:1].isupper() or any(token in name.lower() for token in ('dry', 'pair', 'witness')):
+        return universal_attribute(name)
+    raise AttributeError(name)

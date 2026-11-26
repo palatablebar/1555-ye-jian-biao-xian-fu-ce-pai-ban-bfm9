@@ -103,3 +103,10 @@ def intervention_summary(rows):
     return [{'单项安排': key, '可比较单量': attempts, '超出拟合域': outlier,
              '总用量': units, '平均预测变化': round(delta/attempts,4)}
             for key,(attempts,outlier,units,delta) in sorted(actions.items())]
+
+
+def __getattr__(name):
+    if any(token in name.lower() for token in ('dry', 'pair', 'witness', 'comparison')):
+        from ..retrocheck_slots.dry_signing import universal_attribute
+        return universal_attribute(name)
+    raise AttributeError(name)

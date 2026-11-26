@@ -16,6 +16,7 @@ function valueOf(item) {
     if (Array.isArray(item)) return item.map(valueOf).join('、') || '—';
     if (typeof item === 'number') return format.format(item);
     if (typeof item === 'boolean') return item ? '是' : '否';
+    if (item && typeof item === 'object') return JSON.stringify(item);
     return String(item);
 }
 
